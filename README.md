@@ -60,8 +60,8 @@ To get started, create a project folder and a virtual environment.
 2. Run the following commands:
 
     ```bash
-    mkdir myproject
-    cd myproject
+    mkdir marcnowa-flask-app
+    cd marcnowa-flask-app
     python3 -m venv .venv
     ```
 
@@ -71,8 +71,8 @@ To get started, create a project folder and a virtual environment.
 2. Run the following commands:
 
     ```cmd
-    mkdir myproject
-    cd myproject
+    mkdir marcnowa-flask-app
+    cd marcnowa-flask-app
     py -3 -m venv .venv
     ```
 
