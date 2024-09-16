@@ -34,12 +34,15 @@ def raster_values_at_points(raster_path, points_gdf, column_name):
     return new_gdf
 
 # Define a function to read vector data
-def read_vector_data(bigSQ_path, smallSQ_path):
+def read_vector_data(bigSQ_path, smallSQ_path, pixelCentroids_path):
     bigSQ_all = gpd.read_file(bigSQ_path)
     bigSQ_all = bigSQ_all.rename(columns={"id": "majorid"})
+    
     smallSQ_all = gpd.read_file(smallSQ_path)
     smallSQ_all = smallSQ_all.rename(columns={"id": "minorid"})
-    return bigSQ_all, smallSQ_all
+    
+    pixelCentroids_all = gpd.read_file(pixelCentroids_path)
+    return bigSQ_all, smallSQ_all, pixelCentroids_all
     
 def convert_to_double_quotes(d):
     return str(d).replace("'", '"')
@@ -60,7 +63,7 @@ def generate_date_range(start_date, end_date):
     
     return date_list
 
-def process_raster_file_from_geoserver(coverage_id, dates, bigSQ_all, smallSQ_all, output_dir):
+def process_raster_file_from_geoserver(coverage_id, dates,pixelCentroids, output_dir):
     base_url = 'http://197.255.126.45:8080/geoserver/marcnowa/wcs?service=WCS&version=2.0.1&request=GetCoverage'
     bbox = '-35.0,-10.0,38.0,40.0'
     width = 768
@@ -91,64 +94,76 @@ def process_raster_file_from_geoserver(coverage_id, dates, bigSQ_all, smallSQ_al
                 # Get the original nodata value
                 original_nodata = src.nodata
 
-                # Define the new nodata value
-                nodata = -9999
+                # # Define the new nodata value
+                # nodata = -9999
 
-                # Read the first band of the raster
-                val = src.read(1)
-                print("Raster data read successfully")
+                # # Read the first band of the raster
+                # val = src.read(1)
+                # print("Raster data read successfully")
 
-                # Handle different types of nodata values
-                if original_nodata is None:
-                    print("Original nodata value is None. Setting all NaNs to nodata.")
-                    # Handle NaN values as nodata
-                    val[np.isnan(val)] = nodata
+                # # Handle different types of nodata values
+                # if original_nodata is None:
+                #     print("Original nodata value is None. Setting all NaNs to nodata.")
+                #     # Handle NaN values as nodata
+                #     val[np.isnan(val)] = nodata
                     
-                elif isinstance(original_nodata, float):
-                    print("Original nodata value is float.")
-                    # Replace the original nodata values with the new nodata value
-                    val[np.isnan(val)] = nodata
+                # elif isinstance(original_nodata, float):
+                #     print("Original nodata value is float.")
+                #     # Replace the original nodata values with the new nodata value
+                #     val[np.isnan(val)] = nodata
                     
-                else:
-                    print("Original nodata value is numeric.")
-                    # Assume nodata is a numerical type that can be compared directly
-                    val[val == original_nodata] = nodata
+                # else:
+                #     print("Original nodata value is numeric.")
+                #     # Assume nodata is a numerical type that can be compared directly
+                #     val[val == original_nodata] = nodata
 
-                geometry = [Point(src.xy(x, y)[0], src.xy(x, y)[1]) for x, y in np.ndindex(val.shape) if val[x, y] != nodata]
-                print(f"Created {len(geometry)} points from raster data")
+                # geometry = [Point(src.xy(x, y)[0], src.xy(x, y)[1]) for x, y in np.ndindex(val.shape) if val[x, y] != nodata]
+                # print(f"Created {len(geometry)} points from raster data")
 
-                pointsdf = gpd.GeoDataFrame({'geometry': geometry})
-                pointsdf = pointsdf.set_crs(epsg=4326, inplace=True)
+                # pointsdf = gpd.GeoDataFrame({'geometry': geometry})
+                # pointsdf = pointsdf.set_crs(epsg=4326, inplace=True)
 
-                pointsdfd = pd.DataFrame({'geometry': pointsdf['geometry']})
-                pointsdfd['UniqueID'] = pointsdfd['geometry'].apply(create_unique_id)
-                pointsdfd = gpd.GeoDataFrame(pointsdfd, geometry=pointsdfd['geometry'], crs="EPSG:4326")
+                # pointsdfd = pd.DataFrame({'geometry': pointsdf['geometry']})
+                # pointsdfd['UniqueID'] = pointsdfd['geometry'].apply(create_unique_id)
+                
+                # pointsdfd = gpd.GeoDataFrame(pointsdfd, geometry=pointsdfd['geometry'], crs="EPSG:4326")
 
+                #Add
+                pointsdfd = pixelCentroids
+                
+                
+                print("Extracting raster values at points")
+                
                 raster_values_gdf1 = raster_values_at_points(BytesIO(response.content), pointsdfd, variable_name)
-                print("Extracted raster values at points")
 
-                firstJoin = gpd.sjoin(raster_values_gdf1, bigSQ_all, predicate='intersects')
-                print(f"Performed first spatial join, resulting in {len(firstJoin)} records")
+                # Add, Drop points with nan
+                raster_values_gdf1 = raster_values_gdf1.dropna(subset=variable_name)
 
-                firstJoin = firstJoin[['geometry', 'UniqueID', variable_name, 'majorid']]
+                
 
-                secondJoin = gpd.sjoin(firstJoin, smallSQ_all, predicate='intersects')
-                print(f"Performed second spatial join, resulting in {len(secondJoin)} records")
+                # firstJoin = gpd.sjoin(raster_values_gdf1, bigSQ_all, predicate='intersects')
+                # print(f"Performed first spatial join, resulting in {len(firstJoin)} records")
 
-                secondJoin = secondJoin[['geometry', 'UniqueID', variable_name, 'majorid', 'minorid']]
+                # firstJoin = firstJoin[['geometry', 'UniqueID', variable_name, 'majorid']]
 
-                secondJoin['majorid'] = secondJoin['majorid'].astype(int)
-                secondJoin['minorid'] = secondJoin['minorid'].astype(int)
-                secondJoin['majorid'] = secondJoin['majorid'].astype(str).str.zfill(3)
-                secondJoin['minorid'] = secondJoin['minorid'].astype(str).str.zfill(4)
+                # secondJoin = gpd.sjoin(firstJoin, smallSQ_all, predicate='intersects')
+                # print(f"Performed second spatial join, resulting in {len(secondJoin)} records")
 
-                grouped = secondJoin.groupby('majorid')
-                print('Successfuly grouped by MajorID')
+                # secondJoin = secondJoin[['geometry', 'UniqueID', variable_name, 'majorid', 'minorid']]
+
+                # secondJoin['majorid'] = secondJoin['majorid'].astype(int)
+                # secondJoin['minorid'] = secondJoin['minorid'].astype(int)
+                # secondJoin['majorid'] = secondJoin['majorid'].astype(str).str.zfill(3)
+                # secondJoin['minorid'] = secondJoin['minorid'].astype(str).str.zfill(4)
+
+                #add
+
+
+                grouped = raster_values_gdf1.groupby('majorid')
                 
 
                 for majorid, group in grouped:
                     
-                    print('processing file for {majorid}')
                     df = group
                     column_headers = ['date'] + [str(i) for i in df['minorid'].unique()]
                     new_df = pd.DataFrame(columns=column_headers)
@@ -162,8 +177,7 @@ def process_raster_file_from_geoserver(coverage_id, dates, bigSQ_all, smallSQ_al
                     new_row_df = pd.DataFrame([row])
                     for col in new_row_df.columns[1:]:
                         new_row_df[col] = new_row_df[col].apply(convert_to_double_quotes)
-                        
-                    
+                     
                     csv_prefixName = variable_name.lower()
                     filename = f'{output_dir}/{csv_prefixName}_{majorid}.csv'
                     new_date = new_row_df['date'].iloc[0]
@@ -179,17 +193,18 @@ def process_raster_file_from_geoserver(coverage_id, dates, bigSQ_all, smallSQ_al
                             print(f"Date {new_date} already exists in {filename}. No new entry added.")
                         else:
                             updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
-                            print(f"Appended new entry for date {new_date} to file {filename}.")
+                            # print(f"Appended new entry for date {new_date} to file {filename}.")
                     else:
                         updated_df = new_row_df
-                        print(f"Created new file {filename} with data for date {new_date}.")
+                        # print(f"Created new file {filename} with data for date {new_date}.")
                     
                     for col in updated_df.columns[1:]:
                         updated_df[col] = updated_df[col].apply(convert_to_double_quotes)
                     updated_df.to_csv(filename, index=False)
-                    print(f"Saved file {filename}")
+                    # print(f"Saved file {filename}")
         else:
             print(f"Error: Unable to retrieve the GeoTIFF for date {date_str}. Status code: {response.status_code}")
+
 
 def create_table(file_path, supabase):
     # Load DataFrame from CSV File

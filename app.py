@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 from src.scripts.computestats import generate_date_range, read_vector_data, process_raster_file_from_geoserver, create_table, upsert_data
 from supabase import create_client, Client
 import os
+import geopandas as gpd
 import json
 
 app = Flask(__name__)
@@ -39,12 +40,12 @@ def run_compute_stats():
     try:
         # Example parameters for the raster processing
         dates = generate_date_range(start_date, end_date)
-        big_sq_all, small_sq_all = read_vector_data('src/data/bigSQ/bigSQ_all.shp', 'src/data/smallSq/smallSQ_all.shp')
+        pixelCentroids = gpd.read_file('src/data/pixelCentroids/SALT_centroids.shp')
         coverage_id = ocean_variable
         output_dir = f'src/outputs/csvs/{coverage_id.lower()}'
 
         # Call the processing function from computestats.py
-        process_raster_file_from_geoserver(coverage_id, dates, big_sq_all, small_sq_all, output_dir)
+        process_raster_file_from_geoserver(coverage_id, dates, pixelCentroids, output_dir)
 
         folder_path = output_dir
         file_paths = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.csv')]
