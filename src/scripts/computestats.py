@@ -8,10 +8,16 @@ import numpy as np
 from shapely.geometry import Point
 import os
 from datetime import datetime, timedelta
-
+from supabase import create_client, Client
 import pandas as pd
 import os
 import json
+
+
+url = "https://admin.geoportal.gmes.ug.edu.gh"
+key =  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE"
+supabase = create_client(url, key)
+
 
 
 
@@ -63,199 +69,9 @@ def generate_date_range(start_date, end_date):
     
     return date_list
 
-def process_raster_file_from_geoserver(coverage_id, dates,pixelCentroids, output_dir):
-    base_url = 'http://197.255.126.45:8080/geoserver/marcnowa/wcs?service=WCS&version=2.0.1&request=GetCoverage'
-    bbox = '-35.0,-10.0,38.0,40.0'
-    width = 768
-    height = 526
-    srs = 'EPSG:4326'
-    format_type = 'image/geotiff'
-
-    # Wrap dates with tqdm for progress tracking
-    for date_str in tqdm(dates, desc="Processing rasters"):
-        print(f"\nProcessing raster for date: {date_str}")
-        
-        # Construct the URL for the current date
-        geotiff_url = f"{base_url}&coverageId=marcnowa%3A{coverage_id}_{date_str}&bbox={bbox}&width={width}&height={height}&srs={srs}&styles=&format={format_type}"
-
-        
-        # Fetch the GeoTIFF data from the URL
-        response = requests.get(geotiff_url)
-
-
-        # Check if the request was successful
-        if response.status_code == 200:
-            print(f"Successfully retrieved GeoTIFF for date {date_str}")
-            
-            # Open the response content as a file-like object using BytesIO
-            with rasterio.open(BytesIO(response.content)) as src:
-                variable_name = coverage_id
-
-                # Get the original nodata value
-                original_nodata = src.nodata
-
-                # # Define the new nodata value
-                # nodata = -9999
-
-                # # Read the first band of the raster
-                # val = src.read(1)
-                # print("Raster data read successfully")
-
-                # # Handle different types of nodata values
-                # if original_nodata is None:
-                #     print("Original nodata value is None. Setting all NaNs to nodata.")
-                #     # Handle NaN values as nodata
-                #     val[np.isnan(val)] = nodata
-                    
-                # elif isinstance(original_nodata, float):
-                #     print("Original nodata value is float.")
-                #     # Replace the original nodata values with the new nodata value
-                #     val[np.isnan(val)] = nodata
-                    
-                # else:
-                #     print("Original nodata value is numeric.")
-                #     # Assume nodata is a numerical type that can be compared directly
-                #     val[val == original_nodata] = nodata
-
-                # geometry = [Point(src.xy(x, y)[0], src.xy(x, y)[1]) for x, y in np.ndindex(val.shape) if val[x, y] != nodata]
-                # print(f"Created {len(geometry)} points from raster data")
-
-                # pointsdf = gpd.GeoDataFrame({'geometry': geometry})
-                # pointsdf = pointsdf.set_crs(epsg=4326, inplace=True)
-
-                # pointsdfd = pd.DataFrame({'geometry': pointsdf['geometry']})
-                # pointsdfd['UniqueID'] = pointsdfd['geometry'].apply(create_unique_id)
-                
-                # pointsdfd = gpd.GeoDataFrame(pointsdfd, geometry=pointsdfd['geometry'], crs="EPSG:4326")
-
-                #Add
-                pointsdfd = pixelCentroids
-                
-                
-                print("Extracting raster values at points")
-                
-                raster_values_gdf1 = raster_values_at_points(BytesIO(response.content), pointsdfd, variable_name)
-
-                # Add, Drop points with nan
-                raster_values_gdf1 = raster_values_gdf1.dropna(subset=variable_name)
-
-                
-
-                # firstJoin = gpd.sjoin(raster_values_gdf1, bigSQ_all, predicate='intersects')
-                # print(f"Performed first spatial join, resulting in {len(firstJoin)} records")
-
-                # firstJoin = firstJoin[['geometry', 'UniqueID', variable_name, 'majorid']]
-
-                # secondJoin = gpd.sjoin(firstJoin, smallSQ_all, predicate='intersects')
-                # print(f"Performed second spatial join, resulting in {len(secondJoin)} records")
-
-                # secondJoin = secondJoin[['geometry', 'UniqueID', variable_name, 'majorid', 'minorid']]
-
-                # secondJoin['majorid'] = secondJoin['majorid'].astype(int)
-                # secondJoin['minorid'] = secondJoin['minorid'].astype(int)
-                # secondJoin['majorid'] = secondJoin['majorid'].astype(str).str.zfill(3)
-                # secondJoin['minorid'] = secondJoin['minorid'].astype(str).str.zfill(4)
-
-                #add
-
-
-                grouped = raster_values_gdf1.groupby('majorid')
-                
-
-                for majorid, group in grouped:
-                    
-                    df = group
-                    column_headers = ['date'] + [str(i) for i in df['minorid'].unique()]
-                    new_df = pd.DataFrame(columns=column_headers)
-                    row = {'date': date_str}
-                    for i in df['minorid'].unique():
-                        minor_group = df[df['minorid'] == i]
-                        if not minor_group.empty:
-                            row[str(i)] = minor_group.set_index('UniqueID')[variable_name].to_dict()
-                        else:
-                            row[str(i)] = {}
-                    new_row_df = pd.DataFrame([row])
-                    for col in new_row_df.columns[1:]:
-                        new_row_df[col] = new_row_df[col].apply(convert_to_double_quotes)
-                     
-                    csv_prefixName = variable_name.lower()
-                    filename = f'{output_dir}/{csv_prefixName}_{majorid}.csv'
-                    new_date = new_row_df['date'].iloc[0]
-
-                    if os.path.exists(filename):
-                        existing_df = pd.read_csv(filename)
-                        existing_df['date'] = existing_df['date'].astype(str)
-                        new_row_df['date'] = new_row_df['date'].astype(str)
-
-                        if new_date in existing_df['date'].values:
-                            # Entry already exists
-                            updated_df = existing_df
-                            print(f"Date {new_date} already exists in {filename}. No new entry added.")
-                        else:
-                            updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
-                            # print(f"Appended new entry for date {new_date} to file {filename}.")
-                    else:
-                        updated_df = new_row_df
-                        # print(f"Created new file {filename} with data for date {new_date}.")
-                    
-                    for col in updated_df.columns[1:]:
-                        updated_df[col] = updated_df[col].apply(convert_to_double_quotes)
-                    updated_df.to_csv(filename, index=False)
-                    # print(f"Saved file {filename}")
-        else:
-            print(f"Error: Unable to retrieve the GeoTIFF for date {date_str}. Status code: {response.status_code}")
-
-
-def create_table(file_path, supabase):
-    # Load DataFrame from CSV File
-    df = pd.read_csv(file_path)
-    column_names = df.columns.tolist()
-
-    # Extract Date Column and JSONB Columns
-    date_column_name = None
-    jsonb_columns = []
-
-    for col in column_names:
-        if col.lower() == 'date':
-            date_column_name = col
-        else:
-            jsonb_columns.append(col)
-
-    # Extract Table Name from File Path
-    file_name = os.path.basename(file_path).split('.')[0]
-    extracted_part = file_name.split('-')[-1]
-    table_name = extracted_part.lower()
-
-    # Print Results
-    # print(f"Processing File: {file_path}")
-    # print("Date Column:", date_column_name)
-    # print("JSONB Columns:", jsonb_columns)
-    # print("Extracted Part (Table Name):", table_name)
-
-    # Call Supabase SQL Function to Create the Table
+def upsert_data(df,name):
     try:
-        response = supabase.rpc(
-            "create_table_with_dynamic_columns",
-            {
-                "table_name": table_name,
-                "date_column_name": date_column_name,
-                "jsonb_columns": jsonb_columns
-            }
-        ).execute()
-        # print(response)  # Show the result of the RPC call
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-
-def upsert_data(file_path, supabase):
-    try:
-        # Read the DataFrame
-        df = pd.read_csv(file_path)
-        
-        # Extract Table Name from File Path
-        file_name = os.path.basename(file_path).split('.')[0]
-        extracted_part = file_name.split('-')[-1]
-        table_name = extracted_part.lower()
+        table_name =name
         
         # Iterate over each row in the DataFrame
         for index, row in df.iterrows():
@@ -288,4 +104,94 @@ def upsert_data(file_path, supabase):
                 print(f"An error occurred while upserting row {index} in table {table_name}: {e}")
 
     except Exception as e:
-        print(f"An error occurred while processing file {file_path}: {e}")
+        print(f"An error occurred while processing file {name}: {e}")
+
+def process_raster_file_from_geoserver(coverage_id, dates, pixelCentroids):
+    base_url = 'http://197.255.126.45:8080/geoserver/marcnowa/wcs?service=WCS&version=2.0.1&request=GetCoverage'
+    bbox = '-35.0,-10.0,38.0,40.0'
+    width = 768
+    height = 526
+    srs = 'EPSG:4326'
+    format_type = 'image/geotiff'
+
+    # Wrap dates with tqdm for progress tracking
+    for date_str in tqdm(dates, desc="Processing rasters"):
+        print(f"\nInitializing Raster Processing for: {coverage_id}_{date_str}")
+
+        # Construct the URL for the current date
+        geotiff_url = f"{base_url}&coverageId=marcnowa%3A{coverage_id}_{date_str}&bbox={bbox}&width={width}&height={height}&srs={srs}&styles=&format={format_type}"
+
+        # Fetch the GeoTIFF data from the URL
+        response = requests.get(geotiff_url)
+
+        # Check if the request was successful
+        if response.status_code != 200:
+            raise Exception(f"Error: Unable to retrieve the GeoTIFF for date {date_str}. Status code: {response.status_code}")
+
+        print(f"Successfully retrieved GeoTIFF for {coverage_id}_{date_str}")
+
+        # Open the response content as a file-like object using BytesIO
+        with rasterio.open(BytesIO(response.content)) as src:
+            variable_name = coverage_id
+
+
+            pointsdfd = pixelCentroids
+
+            print(f"Extracting raster values at points for {coverage_id}_{date_str}")
+
+            raster_values_gdf1 = raster_values_at_points(BytesIO(response.content), pointsdfd, variable_name)
+
+            # Drop points with nan
+            raster_values_gdf1 = raster_values_gdf1.dropna(subset=variable_name)
+
+            # Drop column 'geometry'
+            raster_values_gdf1 = raster_values_gdf1.drop('geometry', axis=1)
+
+            # Round to 4
+            raster_values_gdf1[variable_name] = raster_values_gdf1[variable_name].round(4)
+
+            df = raster_values_gdf1
+
+            # Using itertuples() to loop over rows
+            df_dict = {}
+
+            for row in df.itertuples(index=False):
+                major = (f'{coverage_id}_{row.majorid}').lower()
+                minor = row.minorid
+                uniqueid = row.UniqueID
+                variableValue = getattr(row, coverage_id)
+
+                if major not in df_dict:
+                    df_dict[major] = {}
+
+                if minor not in df_dict[major]:
+                    df_dict[major][minor] = {}
+
+                df_dict[major][minor][uniqueid] = variableValue
+
+            data_dict = df_dict
+
+            dataframes = {}
+
+            for key, nested_dict in data_dict.items():
+                # Prepare the data for the DataFrame
+                df_data = {minor_id: [uni_dict] for minor_id, uni_dict in nested_dict.items()}
+
+                # Create the DataFrame
+                df = pd.DataFrame(df_data)
+
+                # Add the 'date' column at the beginning
+                df.insert(0, 'date', date_str)
+
+                for col in df.columns[1:]:
+                    df[col] = df[col].apply(convert_to_double_quotes)
+
+                # Store in the dictionary
+                dataframes[key] = df
+
+            print("Successfully generated all dataframes")
+
+            # Apply the upload function to each DataFrame in dataframes
+            for name, df in dataframes.items():
+                print(f"\nUploading day {date_str} entry for Grid {name}:")
+                upsert_data(df, name)
