@@ -18,7 +18,32 @@ url = "https://admin.geoportal.gmes.ug.edu.gh"
 key =  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE"
 supabase = create_client(url, key)
 
+def fetch_data_by_date_range(input_json):
+    # Extract parameters from the input JSON
+    start_date = input_json.get('startdate', None)
+    end_date = input_json.get('enddate', None)
+    table_name = input_json.get('tablename', None)
+    jsonb_column_name = input_json.get('jsonbcolumnname', None)
+    pixel_id = input_json.get('pixelid', None)
 
+    # Log input values for debugging
+    print(f"Start Date: {start_date}, End Date: {end_date}, Table Name: {table_name}, JSONB Column Name: {jsonb_column_name}, Pixel ID: {pixel_id}")
+
+    # Check for None values
+    if None in (start_date, end_date, table_name, jsonb_column_name, pixel_id):
+        return {"error": "All fields are required."}, 400
+
+    # Call the fetch_rows_by_pixel_id function
+    response = supabase.rpc("fetch_rows_by_pixel_id_i", {
+        "start_date": start_date,
+        "end_date": end_date,
+        "table_name": table_name,
+        "jsonb_column_name": jsonb_column_name,
+        "pixel_id": pixel_id
+    }).execute()
+
+    data = response.data
+    return data
 
 
 # Define a function to create unique IDs
@@ -126,7 +151,7 @@ def process_raster_file_from_geoserver(coverage_id, dates, pixelCentroids):
 
         # Check if the request was successful
         if response.status_code != 200:
-            raise Exception(f"Error: Unable to retrieve the GeoTIFF for date {date_str}. Status code: {response.status_code}")
+            raise Exception(f"Error: Unable to retrieve the GeoTIFF for date {coverage_id}_{date_str}. Status code: {response.status_code}")
 
         print(f"Successfully retrieved GeoTIFF for {coverage_id}_{date_str}")
 

@@ -1,10 +1,11 @@
 
 from flask import Flask, request, jsonify
-from src.scripts.computestats import generate_date_range, process_raster_file_from_geoserver
-
+from src.scripts.computestats import generate_date_range, process_raster_file_from_geoserver, fetch_data_by_date_range
+from supabase import create_client, Client
 import geopandas as gpd
 
 app = Flask(__name__)
+
 
 @app.route('/test', methods=['POST'])
 def test():
@@ -47,6 +48,14 @@ def run_compute_stats():
     
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
+    
+
+
+@app.route('/fetch-data-by-date-range', methods=['POST'])
+def fetch_data_route():
+    input_json = request.get_json(force=True)
+    return fetch_data_by_date_range(input_json)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
